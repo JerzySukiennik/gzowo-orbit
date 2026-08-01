@@ -1,0 +1,11 @@
+{
+  "name": "gzowo-orbit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Co-op astronaut game in a 1:1 Solar System, seamless from bridge to bootprint",
+  "type": "module",
+  "scripts": {
+    "serve": "python3 serve.py",
+    "test": "node test/precision.test.mjs"
+  }
+}

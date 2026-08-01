@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gzowo Orbit</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --ink: #cfe3f5;
+        --dim: #6d829a;
+        --line: rgba(140, 180, 220, 0.16);
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { height: 100%; background: #000; overflow: hidden; }
+      body {
+        font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+        color: var(--ink);
+        letter-spacing: 0.02em;
+      }
+      #view { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
+      #hud { position: fixed; inset: 0; pointer-events: none; }
+      .panel {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        background: rgba(6, 12, 20, 0.42);
+        backdrop-filter: blur(3px);
+        min-width: 260px;
+      }
+      .panel.right { left: auto; right: 20px; }
+      h1 {
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.22em;
+        margin-bottom: 10px;
+      }
+      h1 span {
+        display: block;
+        font-size: 10px;
+        font-weight: 400;
+        letter-spacing: 0.12em;
+        color: var(--dim);
+        margin-top: 3px;
+      }
+      table { width: 100%; border-collapse: collapse; }
+      th {
+        text-align: left;
+        font-weight: 400;
+        color: var(--dim);
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        padding-bottom: 3px;
+      }
+      td { padding: 2px 0; }
+      td:last-child, th:last-child { text-align: right; }
+      .far { color: var(--dim); }
+      .near { color: #8fd6a8; }
+      p { margin-top: 10px; color: var(--dim); font-size: 10px; line-height: 1.7; }
+      #crosshair {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        width: 14px;
+        height: 14px;
+        margin: -7px 0 0 -7px;
+        border: 1px solid rgba(180, 210, 240, 0.35);
+        border-radius: 50%;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="hud"></div>
+    <div id="crosshair"></div>
+    <script type="importmap">
+      { "imports": { "three": "https://unpkg.com/three@0.169.0/build/three.module.js" } }
+    </script>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
