@@ -14,6 +14,7 @@ const HEIGHT = 512;
 const INK = '#7fd4ff';
 const WARN = '#ffb45c';
 const ALERT = '#ff6b5c';
+const STATION_LABEL = 'HARBOUR';
 
 export class Cockpit {
   constructor(group, offset) {
@@ -57,7 +58,7 @@ export class Cockpit {
     this.mesh.visible = value;
   }
 
-  draw(ship, bodyId, jump) {
+  draw(ship, bodyId, jump, work) {
     const c = this.context;
     const t = ship.telemetry;
     const orbit = elements(bodyId, ship.position, ship.velocity);
@@ -143,6 +144,35 @@ export class Cockpit {
         const width = c.measureText(jump.message).width;
         c.fillStyle = WARN;
         c.fillText(jump.message.toUpperCase(), 1024 - 56 - width, HEIGHT - 148);
+      }
+    }
+
+    if (work) {
+      c.font = '600 18px ui-monospace, Menlo, monospace';
+      const held = Object.entries(work.cargo.held);
+      const mass = held.reduce((sum, [, amount]) => sum + amount, 0);
+      const manifest = held.length
+        ? held.map(([id, amount]) => `${id} ${Math.round(amount)}kg`).join('  ')
+        : 'hold empty';
+      c.fillStyle = 'rgba(127, 212, 255, 0.55)';
+      c.fillText(`HOLD ${Math.round(mass)} / ${Math.round(work.cargo.capacity)} kg`, 56, HEIGHT - 186);
+      c.fillStyle = INK;
+      const credits = `${work.ledger.credits} CR`;
+      c.fillText(credits, WIDTH - 56 - c.measureText(credits).width, HEIGHT - 186);
+      c.fillStyle = 'rgba(127, 212, 255, 0.42)';
+      c.fillText(manifest, 56, HEIGHT - 164);
+
+      if (work.docking && Number.isFinite(work.docking.range) && work.docking.range < 4000) {
+        const state = work.docking.docked
+          ? 'DOCKED  ·  T sell + refuel  ·  U fit module'
+          : `${STATION_LABEL} ${Math.round(work.docking.range)} m  ·  closing ${work.docking.closing.toFixed(1)} m/s`;
+        c.fillStyle = work.docking.docked ? INK : work.docking.eligible ? INK : WARN;
+        c.fillText(state, 56, HEIGHT - 210);
+      }
+      if (work.workMessage) {
+        c.fillStyle = WARN;
+        const text = work.workMessage.toUpperCase();
+        c.fillText(text, WIDTH - 56 - c.measureText(text).width, HEIGHT - 164);
       }
     }
 

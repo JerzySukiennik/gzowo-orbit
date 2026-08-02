@@ -108,6 +108,16 @@ export class Visor {
     c.fillStyle = oxygenTint;
     c.fillRect(30, bar, (WIDTH - 60) * Math.max(0, Math.min(1, astronaut.oxygen / SUIT.oxygenSeconds)), 10);
 
+    if (environment.deposit) {
+      const d = environment.deposit;
+      c.font = '600 17px ui-monospace, Menlo, monospace';
+      c.fillStyle = d.inRange ? INK : 'rgba(143, 227, 255, 0.6)';
+      const text = d.inRange
+        ? `${d.label.toUpperCase()} — UNDER FOOT, Z TO CUT`
+        : `${d.label.toUpperCase()} ${Math.round(d.distance)} m ${d.bearing}`;
+      c.fillText(text, 30, 190);
+    }
+
     if (astronaut.down) {
       c.font = '700 22px ui-monospace, Menlo, monospace';
       c.fillStyle = ALERT;

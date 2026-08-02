@@ -8,6 +8,7 @@
 
 import { faceUvToDirection, directionToLatLon, lonLatToMercator, degrees } from '../shared/geodesy.js';
 import { proceduralHeight, detailHeight } from '../shared/terrainheight.js';
+import { craterDepthAt } from '../work/mining.js';
 
 const ELEVATION_MAX_ZOOM = 15;
 const IMAGERY_MAX_ZOOM = 7;
@@ -304,6 +305,7 @@ async function build(job) {
       ])
     : [null, null];
 
+  const craters = job.craters || [];
   const stride = resolution + 5;
   const heightGrid = new Float64Array(stride * stride);
   const direction = { x: 0, y: 0, z: 0 };
@@ -325,6 +327,7 @@ async function build(job) {
         height = proceduralHeight(body, direction, radius);
       }
       height += detailHeight(body, direction);
+      if (craters.length) height -= craterDepthAt(craters, direction);
       heightGrid[(j + 2) * stride + (i + 2)] = height;
       if (i >= 0 && i <= resolution && j >= 0 && j <= resolution) {
         minH = Math.min(minH, height);

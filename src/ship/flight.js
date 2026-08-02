@@ -63,7 +63,9 @@ const torqueAxis = vec3();
 const lateral = vec3();
 
 export function shipMass(ship) {
-  return SHIP.dryMass + ship.fuel;
+  // Cargo is mass like any other. A full hold is a heavier start, a longer stop and a
+  // worse landing, which is the whole reason the hold has a limit.
+  return SHIP.dryMass + ship.fuel + (ship.cargoMass || 0);
 }
 
 function applyAerodynamics(ship, density, mass, dt) {

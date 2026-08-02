@@ -21,6 +21,9 @@ import { Visor } from './crew/visor.js';
 import { rotateVector } from './shared/quat.js';
 import { createShip, updateShip, SHIP } from './ship/flight.js';
 import { JumpDrive, placeOnArrivalOrbit } from './ship/jump.js';
+import { createCargo, cargoMass, RESOURCES, depositNear } from './work/resources.js';
+import { createDigSite, createDrill, fireLaser, deployDrill, updateDrill, cratersFor, TOOL } from './work/mining.js';
+import { createLedger, dockingState, sellCargo, refuel, refuelCost, buyModule, offerContracts, stationPosition, MODULES, STATION } from './econ/station.js';
 import { CrewSession } from './net/session.js';
 import { CrewView } from './net/crewview.js';
 import { ACTION } from './net/protocol.js';
@@ -53,6 +56,13 @@ const jump = new JumpDrive();
 const session = new CrewSession({ name: 'Gzowo crew' });
 const crewView = new CrewView(renderer.nearScene);
 const SELF_ID = 'local';
+const cargo = createCargo();
+const digSite = createDigSite();
+const drill = createDrill();
+const ledger = createLedger();
+let docking = { docked: false, range: Infinity, closing: 0, hold: 0 };
+let workMessage = '';
+const aimDirection = vec3();
 
 // Networking is optional and silent about it: without assets/firebase.json the game is a
 // single-crew game and says so, rather than failing somewhere deep in a handshake.
@@ -129,6 +139,34 @@ window.addEventListener('keydown', (event) => {
       else session.status = 'no open crews';
     });
   }
+  if (event.code === 'KeyX' && outside) {
+    const radius = length(outside.position);
+    scale(aimDirection, outside.position, 1 / radius);
+    const result = deployDrill(drill, {
+      bodyId: outside.frame,
+      bodyRadius: BODIES[outside.frame].radius,
+      aimDirection,
+      site: digSite,
+    });
+    workMessage = result.deployed ? `drill running on ${RESOURCES[result.kind].name}` : result.reason;
+    if (result.deployed) {
+      surface.setCraters(cratersFor(digSite, outside.frame));
+      surface.invalidate(aimDirection, (TOOL.drillCrater.radius * 3) / BODIES[outside.frame].radius);
+    }
+  }
+  if (event.code === 'KeyT' && docking.docked) {
+    const sale = sellCargo(ledger, cargo);
+    const tank = refuel(ledger, ship);
+    offerContracts(ledger, envTime);
+    workMessage = sale.ok
+      ? `sold for ${sale.value} credits${tank.ok ? `, refuelled for ${tank.cost}` : ''}`
+      : sale.reason;
+  }
+  if (event.code === 'KeyU' && docking.docked) {
+    const next = MODULES.find((module) => !ledger.modules.includes(module.id) && ledger.credits >= module.price);
+    const result = next ? buyModule(ledger, next.id, { cargo }) : { ok: false, reason: 'nothing affordable' };
+    workMessage = result.ok ? `fitted ${result.module.name}` : result.reason;
+  }
   if (event.code === 'KeyJ') jump.cycleTarget(ship.frame);
   if (event.code === 'Enter') jump.engage(ship);
   if (event.code === 'Backspace') {
@@ -141,7 +179,8 @@ window.addEventListener('keydown', (event) => {
 
 window.addEventListener('resize', () => renderer.resize());
 window.orbit = {
-  ship, shipView, pilot, crew, observer, views, renderer, surface, cockpit, visor, jump, placeOnArrivalOrbit, session, crewView,
+  ship, shipView, pilot, crew, observer, views, renderer, surface, cockpit, visor, jump, placeOnArrivalOrbit, session, crewView, cargo, digSite, drill, ledger,
+  get docking() { return docking; },
   toggleAirlock,
   get outside() {
     return outside;
@@ -229,6 +268,23 @@ function applyGuestSnapshot(state) {
   ship.controls.gear = state.ship.controls.gear;
 }
 
+// Bearing rather than an arrow on a map: the suit tells you which way to walk, and the
+// walk is the part worth having.
+function nearestDeposit() {
+  if (!outside) return null;
+  const radius = length(outside.position);
+  if (radius === 0) return null;
+  scale(aimDirection, outside.position, 1 / radius);
+  const found = depositNear(outside.frame, aimDirection, BODIES[outside.frame].radius);
+  if (!found) return null;
+  const frame = localFrame(outside.position);
+  const east = frame.east.x * found.centre.x + frame.east.y * found.centre.y + frame.east.z * found.centre.z;
+  const north = frame.north.x * found.centre.x + frame.north.y * found.centre.y + frame.north.z * found.centre.z;
+  const angle = ((Math.atan2(east, north) * 180) / Math.PI + 360) % 360;
+  const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(angle / 45) % 8];
+  return { label: RESOURCES[found.kind].name, distance: found.distance, bearing: compass, inRange: found.inRange };
+}
+
 function localCrewList() {
   const member = outside
     ? { id: SELF_ID, name: 'Jurek', aboard: false, position: outside.position, yaw: outside.yaw, frame: outside.frame, oxygen: outside.oxygen }
@@ -269,8 +325,28 @@ function step(dt) {
   if (session.role === 'guest' && session.guestState) {
     applyGuestSnapshot(session.guestState);
   } else {
-    updateShip(ship, { groundAltitude: groundAltitude() }, dt);
+    ship.cargoMass = cargoMass(cargo);
+  updateShip(ship, { groundAltitude: groundAltitude() }, dt);
   }
+  if (outside) {
+    const radius = length(outside.position);
+    scale(aimDirection, outside.position, 1 / radius);
+    if (pilot.held('KeyZ')) {
+      const result = fireLaser(
+        { bodyId: outside.frame, bodyRadius: BODIES[outside.frame].radius, aimDirection, aimDistance: 0, cargo, site: digSite },
+        dt
+      );
+      workMessage = result.cutting ? `cutting ${RESOURCES[result.kind].name}` : result.reason;
+      if (result.cutting) surface.setCraters(cratersFor(digSite, outside.frame));
+    }
+  }
+  if (drill.deployed) {
+    updateDrill(drill, cargo, dt);
+    workMessage = `drill: ${Math.round(drill.produced)} kg of ${RESOURCES[drill.kind].name}`;
+  }
+
+  docking = dockingState(ship, envTime, docking);
+
   jump.update(dt, ship, (target) => {
     placeOnArrivalOrbit(ship, target, (envTime % 1000) / 1000);
     surface.detach();
@@ -344,13 +420,16 @@ function step(dt) {
   );
   const inCockpit = !freeCamera && !pilot.third && crew.flying && !outside;
   cockpit.visible = inCockpit;
-  if (inCockpit) cockpit.draw(ship, ship.frame, jump);
+  if (inCockpit) cockpit.draw(ship, ship.frame, jump, { cargo, ledger, docking, workMessage });
 
   const inSuit = Boolean(outside) && !freeCamera && needsSuit(outside.frame, outside.altitude);
   visor.visible = inSuit;
   if (inSuit) {
     visor.place(orientation);
-    visor.draw(outside, { tether: length(anchorWorld) > 0 ? distance(outside.position, anchorWorld) : 0 });
+    visor.draw(outside, {
+      tether: length(anchorWorld) > 0 ? distance(outside.position, anchorWorld) : 0,
+      deposit: nearestDeposit(),
+    });
   }
 
   crewView.update(

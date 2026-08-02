@@ -49,6 +49,14 @@ export class PlanetSurface {
     return this.stats;
   }
 
+  setCraters(craters) {
+    if (this.terrain) this.terrain.craters = craters;
+  }
+
+  invalidate(direction, angularRadius) {
+    if (this.terrain) this.terrain.invalidate(direction, angularRadius);
+  }
+
   heightAt(direction) {
     if (!this.terrain) return 0;
     return this.terrain.sampleHeight(direction);

@@ -189,6 +189,7 @@ class Node {
         resolution: RESOLUTION,
         textureSize: this.level <= 8 ? 96 : 128,
         useTiles: this.terrain.useTiles,
+        craters: this.terrain.craters,
       },
       (payload) => this.receive(payload)
     );
@@ -261,6 +262,7 @@ export class Terrain {
     this.patchCount = 0;
     this.frame = 0;
     this.sources = {};
+    this.craters = [];
     this.lastDiagnostics = null;
     this.visible = [];
     this.sunDirection = new THREE.Vector3(1, 0, 0);
@@ -454,6 +456,30 @@ export class Terrain {
     node.mesh.quaternion.copy(planetQuaternion);
     node.mesh.visible = true;
     this.visible.push(node.mesh);
+  }
+
+  // A dig changes the function the terrain is built from, so the patches built before it
+  // are simply wrong. Throw them away and let the queue rebuild them - at whatever level
+  // of detail is in view, which is the whole point of keeping craters as angles.
+  invalidate(direction, angularRadius) {
+    const drop = (node) => {
+      if (node.children) node.children.forEach(drop);
+      if (!node.mesh) return;
+      const cosine =
+        node.centreDirection.x * direction.x +
+        node.centreDirection.y * direction.y +
+        node.centreDirection.z * direction.z;
+      const angle = Math.acos(Math.max(-1, Math.min(1, cosine)));
+      if (angle < angularRadius + node.arc / this.radius) {
+        this.destroyMesh(node.mesh);
+        node.mesh = null;
+        node.heights = null;
+        node.state = 'idle';
+        this.patchCount -= 1;
+      }
+    };
+    this.roots.forEach(drop);
+    this.visible.length = 0;
   }
 
   sampleHeight(direction) {
