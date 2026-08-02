@@ -44,7 +44,7 @@ export class Hud {
 
     const days = envTime / 86400;
     this.left.innerHTML = `
-      <h1>GZOWO ORBIT<span>phase 1 &middot; ground</span></h1>
+      <h1>GZOWO ORBIT<span>phase 2 &middot; ship${state.freeCamera ? ' &middot; free camera' : ''}</span></h1>
       <table>
         <tr><th>body</th><th>altitude</th><th>pass</th></tr>
         ${rows}
@@ -79,7 +79,7 @@ export class Hud {
         <tr><td>draw calls</td><td>${info.calls}</td></tr>
         <tr><td>fps</td><td>${this.fps.toFixed(0)}</td></tr>
       </table>
-      <p>WASD move &middot; R/F up-down &middot; Q/E roll &middot; wheel throttle &middot; shift boost<br>1 Sun &middot; 2 Earth &middot; 3 Moon &middot; 4 Mars</p>
+      <p>mouse steers &middot; W/S main &middot; shift/ctrl lift &middot; Q/E roll &middot; A/D strafe<br>space stabilise &middot; X cut thrust &middot; G gear &middot; V chase &middot; alt+mouse look &middot; C free camera</p>
     `;
   }
 }

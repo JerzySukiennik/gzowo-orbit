@@ -94,6 +94,21 @@ export function positionAt(bodyId, time, out = vec3(), depth = 0) {
   return out;
 }
 
+const before = vec3();
+const after = vec3();
+
+// Body velocity by central difference. Needed whenever a ship changes reference frame:
+// hand it the same position in a new frame without the frame's own motion and it will
+// appear to have gained kilometres per second it never burned for.
+export function velocityAt(bodyId, time, out = vec3(), h = 1) {
+  positionAt(bodyId, time - h, before);
+  positionAt(bodyId, time + h, after);
+  out.x = (after.x - before.x) / (2 * h);
+  out.y = (after.y - before.y) / (2 * h);
+  out.z = (after.z - before.z) / (2 * h);
+  return out;
+}
+
 export function rotationAt(bodyId, time) {
   const body = BODIES[bodyId];
   if (!body.rotationPeriod) return 0;

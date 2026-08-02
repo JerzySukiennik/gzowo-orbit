@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "serve": "python3 serve.py",
-    "test": "node test/precision.test.mjs"
+    "test": "node test/precision.test.mjs && node test/flight.test.mjs",
+    "test:flight": "node test/flight.test.mjs"
   }
 }

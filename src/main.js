@@ -1,8 +1,9 @@
-// Phase 1 entry point: the frame of reference from phase 0, now carrying real ground.
+// Phase 2 entry point: the frame of reference from phase 0, the ground from phase 1, and
+// a ship that has to be flown down onto it by hand.
 //
 // Two clocks on purpose. The environment clock is accelerated so a sunrise fits inside
-// a session; local motion runs at real seconds, because a landing flown at 100x is not
-// a landing. Interplanetary travel is by jump, so the two never visibly disagree.
+// a session; the ship runs at real seconds, because a landing flown at 100x is not a
+// landing. Interplanetary travel is by jump, so the two never visibly disagree.
 
 import { LayeredRenderer } from './core/renderer.js';
 import { createStarfield } from './core/sky.js';
@@ -10,12 +11,16 @@ import { BodyViews } from './core/bodyviews.js';
 import { Observer } from './core/observer.js';
 import { Hud } from './core/hud.js';
 import { PlanetSurface } from './world/planetsurface.js';
+import { ShipView, COCKPIT } from './ship/shipview.js';
+import { Pilot } from './ship/pilot.js';
+import { Cockpit } from './ship/cockpit.js';
+import { createShip, updateShip, SHIP } from './ship/flight.js';
+import { circularSpeed } from './shared/orbit.js';
 import { TIME_SCALE } from './shared/units.js';
-import { BODIES, BODY_IDS } from './shared/bodies.js';
-import { vec3, sub, add, set, distance, length, scale } from './shared/vec3.js';
+import { BODIES, BODY_IDS, velocityAt } from './shared/bodies.js';
+import { vec3, sub, add, set, copy, scale, distance, length } from './shared/vec3.js';
 
 const INFLUENCE = 400;
-const EYE_HEIGHT = 3;
 
 const canvas = document.getElementById('view');
 const renderer = new LayeredRenderer(canvas);
@@ -23,40 +28,65 @@ renderer.starScene.add(createStarfield());
 
 const views = new BodyViews(renderer.farScene, renderer.nearScene);
 const surface = new PlanetSurface(renderer.nearScene);
+const shipView = new ShipView(renderer.nearScene);
+const pilot = new Pilot(canvas);
+const cockpit = new Cockpit(shipView.group, COCKPIT);
 const observer = new Observer(canvas);
 const hud = new Hud(document.getElementById('hud'));
 
 const origin = vec3();
 const sunward = vec3();
-const localDirection = vec3();
+const groundDirection = vec3();
+const frameVelocity = vec3();
+const nextFrameVelocity = vec3();
+const shipWorld = vec3();
+
 let envTime = 0;
 let last = performance.now();
-let groundAltitude = 0;
+let freeCamera = false;
 let terrainStats = { patches: 0, loaded: 0, inflight: 0 };
 
-function warp(bodyId) {
+views.updatePositions(envTime);
+
+// Start in a low circular orbit rather than on a pad: everything phase 2 added - orbits,
+// atmosphere, gear, the manual descent - is one burn away from there.
+const startRadius = BODIES.earth.radius + 380000;
+const startSpeed = circularSpeed('earth', startRadius);
+const ship = createShip(
+  'earth',
+  vec3(startRadius * 0.32, startRadius * 0.79, startRadius * 0.52),
+  vec3(0, 0, 0)
+);
+{
+  const r = length(ship.position);
+  scale(ship.position, ship.position, startRadius / r);
+  set(ship.velocity, -ship.position.z, 0, ship.position.x);
+  scale(ship.velocity, ship.velocity, startSpeed / length(ship.velocity));
+}
+
+function warpObserver(bodyId) {
   sub(sunward, views.positions.sun, views.positions[bodyId]);
   if (bodyId === 'sun') set(sunward, 0, 0, 1);
   observer.warpTo(bodyId, sunward);
 }
-
-views.updatePositions(envTime);
-warp('earth');
+warpObserver('earth');
 
 const warpKeys = { Digit1: 'sun', Digit2: 'earth', Digit3: 'moon', Digit4: 'mars' };
 window.addEventListener('keydown', (event) => {
+  if (event.code === 'KeyC') freeCamera = !freeCamera;
+  if (event.code === 'KeyG') pilot.toggleGear();
   const target = warpKeys[event.code];
-  if (target && BODY_IDS.includes(target)) warp(target);
+  if (target && BODY_IDS.includes(target) && freeCamera) warpObserver(target);
 });
 
 window.addEventListener('resize', () => renderer.resize());
-window.orbit = { observer, views, renderer, surface, warp };
+window.orbit = { ship, shipView, pilot, observer, views, renderer, surface, cockpit };
 
-function dominantFrame() {
-  let best = observer.frame;
+function dominantBody(position) {
+  let best = null;
   let bestRatio = Infinity;
   for (const id of BODY_IDS) {
-    const ratio = distance(origin, views.positions[id]) / (BODIES[id].radius * INFLUENCE);
+    const ratio = distance(position, views.positions[id]) / (BODIES[id].radius * INFLUENCE);
     if (ratio < bestRatio) {
       bestRatio = ratio;
       best = id;
@@ -65,11 +95,83 @@ function dominantFrame() {
   return best;
 }
 
-function rebaseFrame() {
-  const target = dominantFrame();
-  if (target === observer.frame) return;
-  sub(observer.local, origin, views.positions[target]);
-  observer.frame = target;
+// Changing reference frame has to carry the velocity difference of the two bodies, or a
+// ship drifting from the Moon to the Earth silently gains a kilometre per second.
+function rebaseShip(target) {
+  if (target === ship.frame) return;
+  velocityAt(ship.frame, envTime, frameVelocity);
+  velocityAt(target, envTime, nextFrameVelocity);
+  add(ship.position, ship.position, views.positions[ship.frame]);
+  sub(ship.position, ship.position, views.positions[target]);
+  add(ship.velocity, ship.velocity, frameVelocity);
+  sub(ship.velocity, ship.velocity, nextFrameVelocity);
+  ship.frame = target;
+}
+
+function groundAltitude() {
+  const radius = length(ship.position);
+  const body = BODIES[ship.frame];
+  if (radius === 0) return 0;
+  if (surface.bodyId !== ship.frame) return radius - body.radius;
+  scale(groundDirection, ship.position, 1 / radius);
+  return radius - (body.radius + surface.heightAt(groundDirection));
+}
+
+function step(dt) {
+  envTime += dt * TIME_SCALE;
+
+  const controls = pilot.sample(dt);
+  Object.assign(ship.controls, controls);
+  updateShip(ship, { groundAltitude: groundAltitude() }, dt);
+
+  views.updatePositions(envTime);
+  add(shipWorld, views.positions[ship.frame], ship.position);
+  rebaseShip(dominantBody(shipWorld));
+
+  if (freeCamera) {
+    observer.update(dt);
+    add(origin, views.positions[observer.frame], observer.local);
+  } else {
+    shipView.cameraOrigin(ship, views.positions[ship.frame], pilot.third, origin);
+  }
+
+  views.place(envTime, origin);
+  const near = surfaceBody();
+  views.suppressed = near;
+  if (near) {
+    terrainStats = surface.update(
+      near,
+      views.positions[near],
+      views.quaternionOf(near),
+      origin,
+      views.sunDirectionOf(near)
+    );
+  } else {
+    surface.detach();
+    terrainStats = { patches: 0, loaded: 0, inflight: 0 };
+  }
+
+  const orientation = freeCamera ? observer.quaternion : pilot.cameraOrientation(ship.orientation);
+  shipView.update(ship, origin, views.positions[ship.frame], ship.controls.main * 0.5 + ship.controls.lift * 0.5);
+  const inCockpit = !freeCamera && !pilot.third;
+  cockpit.visible = inCockpit;
+  if (inCockpit) cockpit.draw(ship, ship.frame);
+
+  renderer.render(orientation);
+
+  hud.tick(dt);
+  hud.update({
+    observer: freeCamera ? observer : { local: ship.position, frame: ship.frame, cruiseSpeed: 0, speed: length(ship.velocity) },
+    views,
+    envTime,
+    origin,
+    surface: near,
+    groundAltitude: ship.telemetry.altitude,
+    terrainStats,
+    ship,
+    freeCamera,
+    info: renderer.info,
+  });
 }
 
 function surfaceBody() {
@@ -85,57 +187,6 @@ function surfaceBody() {
     }
   }
   return closest;
-}
-
-function clampToGround(bodyId) {
-  const body = BODIES[bodyId];
-  const radius = length(observer.local);
-  if (radius === 0 || radius > body.radius * 1.6) {
-    groundAltitude = radius - body.radius;
-    return;
-  }
-  scale(localDirection, observer.local, 1 / radius);
-  const ground = body.radius + surface.heightAt(localDirection);
-  groundAltitude = radius - ground;
-  if (groundAltitude < EYE_HEIGHT) {
-    scale(observer.local, localDirection, ground + EYE_HEIGHT);
-    groundAltitude = EYE_HEIGHT;
-  }
-}
-
-function step(dt) {
-  envTime += dt * TIME_SCALE;
-
-  observer.update(dt);
-  views.updatePositions(envTime);
-  add(origin, views.positions[observer.frame], observer.local);
-  rebaseFrame();
-  views.place(envTime, origin);
-
-  const near = surfaceBody();
-  views.suppressed = near;
-  if (near) {
-    add(origin, views.positions[observer.frame], observer.local);
-    if (observer.frame === near) clampToGround(near);
-    add(origin, views.positions[observer.frame], observer.local);
-    views.place(envTime, origin);
-    terrainStats = surface.update(
-      near,
-      views.positions[near],
-      views.quaternionOf(near),
-      origin,
-      views.sunDirectionOf(near)
-    );
-  } else {
-    surface.detach();
-    terrainStats = { patches: 0, loaded: 0, inflight: 0 };
-    groundAltitude = 0;
-  }
-
-  renderer.render(observer.quaternion);
-
-  hud.tick(dt);
-  hud.update({ observer, views, envTime, origin, surface: near, groundAltitude, terrainStats, info: renderer.info });
 }
 
 function frame(now) {
