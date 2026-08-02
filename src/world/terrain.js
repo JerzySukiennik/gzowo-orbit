@@ -13,7 +13,7 @@ import { proceduralHeight, detailHeight } from '../shared/terrainheight.js';
 
 const RESOLUTION = 32;
 const SPLIT_FACTOR = 2.4;
-const MAX_INFLIGHT = 6;
+const MAX_INFLIGHT = 8;
 const RETIRE_AFTER = 240;
 const PATCH_BUDGET = 420;
 
@@ -172,8 +172,7 @@ class Node {
     return this.mesh !== null;
   }
 
-  request() {
-    if (this.state !== 'idle' || this.terrain.pool.busy) return;
+  submit() {
     this.state = 'pending';
     const id = nextJobId += 1;
     this.terrain.pool.submit(
@@ -275,6 +274,27 @@ export class Terrain {
     this.scratchDirection = { x: 0, y: 0, z: 0 };
     this.scratchRotated = { x: 0, y: 0, z: 0 };
     this.faceUv = { face: 0, u: 0, v: 0 };
+    this.queue = [];
+    this.planetOffset = { x: 0, y: 0, z: 0 };
+  }
+
+  enqueue(node, distance) {
+    if (node.state !== 'idle') return;
+    node.state = 'queued';
+    this.queue.push({ node, distance });
+  }
+
+  dispatch() {
+    this.queue.sort((a, b) => a.distance - b.distance);
+    for (const item of this.queue) {
+      if (this.pool.inflight >= MAX_INFLIGHT) break;
+      if (item.node.disposed) continue;
+      item.node.submit();
+    }
+    for (const item of this.queue) {
+      if (item.node.state === 'queued') item.node.state = 'idle';
+    }
+    this.queue.length = 0;
   }
 
   createMesh(payload) {
@@ -362,22 +382,33 @@ export class Terrain {
     };
 
     const world = { x: 0, y: 0, z: 0 };
-    // fallback carries the deepest ancestor that actually has geometry. Without it a node
-    // whose own mesh has not arrived yet leaves a hole straight through the planet, and
-    // the hole lasts exactly as long as the build queue stays saturated.
-    const visit = (node, fallback) => {
-      node.lastUsed = this.frame;
-      const drawable = node.ready ? node : fallback;
+
+    const distanceTo = (node) => {
       this.nodeWorld(node, planetPosition, planetQuaternion, world);
-      const distance = Math.max(
+      return Math.max(
         1,
         Math.hypot(world.x - camera.x, world.y - camera.y, world.z - camera.z) - node.boundingRadius
       );
+    };
+
+    // The tree grows strictly top-down: a node is never descended into, and its children
+    // are never queued, until the node itself has geometry. Growing bottom-up leaves a
+    // deep branch with neither its own mesh nor a drawable ancestor, and that is a hole
+    // straight through the planet - worst exactly under the camera, where the tree is
+    // deepest. `fallback` stays as a safety net for the frame a node is retired in.
+    const visit = (node, fallback) => {
+      node.lastUsed = this.frame;
+      const distance = distanceTo(node);
+
+      if (!node.ready) {
+        this.enqueue(node, distance);
+        this.draw(fallback, planetQuaternion);
+        return;
+      }
 
       const wantsSplit = node.level < this.maxLevel && distance < node.arc * SPLIT_FACTOR;
       if (!wantsSplit) {
-        if (!node.ready) node.request();
-        this.draw(drawable, planetQuaternion);
+        this.draw(node, planetQuaternion);
         node.dropChildren(this.frame);
         return;
       }
@@ -388,18 +419,18 @@ export class Terrain {
         child.lastUsed = this.frame;
         if (!child.ready) {
           allReady = false;
-          child.request();
+          this.enqueue(child, distanceTo(child));
         }
       }
       if (!allReady) {
-        if (!node.ready) node.request();
-        this.draw(drawable, planetQuaternion);
+        this.draw(node, planetQuaternion);
         return;
       }
-      for (const child of node.children) visit(child, drawable);
+      for (const child of node.children) visit(child, node);
     };
 
     for (const root of this.roots) visit(root, null);
+    this.dispatch();
 
     if (this.patchCount > PATCH_BUDGET) {
       for (const root of this.roots) root.dropChildren(this.frame);

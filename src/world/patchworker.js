@@ -199,23 +199,33 @@ async function loadImagery(bounds, diagnostics) {
   const grid = imageryGrid(zoom);
   const a = imageryCell(grid, bounds.minLon, bounds.maxLat);
   const b = imageryCell(grid, bounds.maxLon, bounds.minLat);
-  const cols = grid.cols;
-  const rows = grid.rows;
-  const c0 = Math.min(a.col, b.col);
-  const c1 = Math.max(a.col, b.col);
   const r0 = Math.min(a.row, b.row);
   const r1 = Math.max(a.row, b.row);
-  diagnostics.imagery = `z${zoom} ${c1 - c0 + 1}x${r1 - r0 + 1}`;
-  if ((c1 - c0 + 1) * (r1 - r0 + 1) > MAX_TILES_PER_PATCH) {
+
+  // Longitude wraps, column indices do not. A patch covering a pole spans every
+  // longitude, and normalising its edges collapses that span onto a single column - the
+  // fetch then misses every tile the texture later samples and the patch comes out black.
+  const columns = [];
+  if (degrees(bounds.maxLon - bounds.minLon) >= 359.9) {
+    for (let c = 0; c < grid.cols; c += 1) columns.push(c);
+  } else if (b.col >= a.col) {
+    for (let c = a.col; c <= b.col; c += 1) columns.push(c);
+  } else {
+    for (let c = a.col; c < grid.cols; c += 1) columns.push(c);
+    for (let c = 0; c <= b.col; c += 1) columns.push(c);
+  }
+
+  diagnostics.imagery = `z${zoom} ${columns.length}x${r1 - r0 + 1}`;
+  if (columns.length * (r1 - r0 + 1) > MAX_TILES_PER_PATCH) {
     diagnostics.imagery += ' too-many';
     return null;
   }
 
   const tiles = new Map();
   const jobs = [];
-  for (let c = c0; c <= c1; c += 1) {
+  for (const c of columns) {
     for (let r = r0; r <= r1; r += 1) {
-      if (c < 0 || c >= cols || r < 0 || r >= rows) continue;
+      if (r < 0 || r >= grid.rows) continue;
       const key = `i${zoom}/${r}/${c}`;
       jobs.push(
         loadTile(key, imageryUrl(zoom, r, c), IMAGERY_TILE).then((data) => {
