@@ -57,7 +57,7 @@ export class Cockpit {
     this.mesh.visible = value;
   }
 
-  draw(ship, bodyId) {
+  draw(ship, bodyId, jump) {
     const c = this.context;
     const t = ship.telemetry;
     const orbit = elements(bodyId, ship.position, ship.velocity);
@@ -125,6 +125,26 @@ export class Cockpit {
     bar(56, ship.controls.main, INK);
     bar(400, ship.controls.lift, INK);
     bar(744, ship.fuel / SHIP.fuelCapacity, ship.fuel / SHIP.fuelCapacity < 0.15 ? WARN : INK);
+
+    if (jump) {
+      const label = jump.target ? `JUMP → ${jump.target.toUpperCase()}` : 'JUMP → NO TARGET';
+      c.font = '600 20px ui-monospace, Menlo, monospace';
+      c.fillStyle = jump.state === 'idle' ? 'rgba(127, 212, 255, 0.55)' : INK;
+      c.fillText(label, 56, HEIGHT - 148);
+      if (jump.state !== 'idle') {
+        const text = jump.state === 'charging' ? `CHARGING ${Math.round(jump.progress * 100)}%` : jump.state.toUpperCase();
+        const width = c.measureText(text).width;
+        c.fillText(text, 1024 - 56 - width, HEIGHT - 148);
+        c.fillStyle = 'rgba(127, 212, 255, 0.16)';
+        c.fillRect(56, HEIGHT - 136, WIDTH - 112, 6);
+        c.fillStyle = INK;
+        c.fillRect(56, HEIGHT - 136, (WIDTH - 112) * jump.progress, 6);
+      } else if (jump.message) {
+        const width = c.measureText(jump.message).width;
+        c.fillStyle = WARN;
+        c.fillText(jump.message.toUpperCase(), 1024 - 56 - width, HEIGHT - 148);
+      }
+    }
 
     const messages = [];
     if (ship.landed) messages.push('LANDED');

@@ -43,31 +43,41 @@ export function createStarfield() {
     depthTest: false,
     depthWrite: false,
     transparent: true,
-    uniforms: { uScale: { value: 1 } },
+    uniforms: { uScale: { value: 1 }, uStretch: { value: 0 } },
     vertexShader: `
       attribute vec3 colour;
       attribute float size;
       uniform float uScale;
+      uniform float uStretch;
       varying vec3 vColour;
+      varying float vStretch;
       void main() {
-        vColour = colour;
+        vColour = mix(colour, vec3(0.62, 0.78, 1.0), uStretch * 0.7);
+        vStretch = uStretch;
         vec4 view = viewMatrix * modelMatrix * vec4(position, 1.0);
         gl_Position = projectionMatrix * view;
-        gl_PointSize = size * uScale;
+        gl_PointSize = size * uScale * (1.0 + uStretch * 9.0);
       }
     `,
     fragmentShader: `
       varying vec3 vColour;
+      varying float vStretch;
       void main() {
         vec2 d = gl_PointCoord - vec2(0.5);
+        // During a jump the stars smear along one axis. Same points, same positions, just
+        // drawn as streaks - no second particle system to keep in step with the first.
+        d.x /= mix(1.0, 0.13, vStretch);
         float falloff = 1.0 - smoothstep(0.0, 0.5, length(d));
         if (falloff <= 0.0) discard;
-        gl_FragColor = vec4(vColour, falloff * falloff);
+        gl_FragColor = vec4(vColour, falloff * falloff * (1.0 + vStretch));
       }
     `,
   });
 
   const points = new THREE.Points(geometry, material);
   points.frustumCulled = false;
+  points.setStretch = (amount) => {
+    material.uniforms.uStretch.value = Math.max(0, Math.min(1, amount));
+  };
   return points;
 }

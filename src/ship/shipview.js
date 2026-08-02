@@ -109,6 +109,14 @@ export class ShipView {
     return out;
   }
 
+  // The bridge sits inside the nose cone, so with the hull drawn the pilot faces the
+  // inside of their own ship instead of the windscreen. The hull is hidden while the
+  // camera is aboard; the interior shell is closed, so the only way out is the glass.
+  setInterior(inside) {
+    if (this.model) this.model.visible = !inside;
+    if (this.interior) this.interior.visible = true;
+  }
+
   update(ship, cameraOrigin, bodyPosition, throttle, sunDirection) {
     if (sunDirection) this.sunLight.position.set(sunDirection.x * 1000, sunDirection.y * 1000, sunDirection.z * 1000);
     if (!this.ready) return;

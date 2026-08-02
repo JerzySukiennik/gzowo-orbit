@@ -20,6 +20,7 @@ import { createAstronaut, updateAstronaut, localFrame, lookDirection, refill, ne
 import { Visor } from './crew/visor.js';
 import { rotateVector } from './shared/quat.js';
 import { createShip, updateShip, SHIP } from './ship/flight.js';
+import { JumpDrive, placeOnArrivalOrbit } from './ship/jump.js';
 import { circularSpeed } from './shared/orbit.js';
 import { TIME_SCALE } from './shared/units.js';
 import { BODIES, BODY_IDS, velocityAt } from './shared/bodies.js';
@@ -29,7 +30,8 @@ const INFLUENCE = 400;
 
 const canvas = document.getElementById('view');
 const renderer = new LayeredRenderer(canvas);
-renderer.starScene.add(createStarfield());
+const starfield = createStarfield();
+renderer.starScene.add(starfield);
 
 const views = new BodyViews(renderer.farScene, renderer.nearScene);
 const surface = new PlanetSurface(renderer.nearScene);
@@ -44,6 +46,7 @@ const cockpit = new Cockpit(shipView.group, {
 });
 const observer = new Observer(canvas);
 const visor = new Visor(renderer.nearScene);
+const jump = new JumpDrive();
 const hud = new Hud(document.getElementById('hud'));
 
 const AIRLOCK_LOCAL = { x: 10.5, y: 0, z: -3 };
@@ -101,13 +104,19 @@ window.addEventListener('keydown', (event) => {
   if (event.code === 'KeyE' && !outside) crew.toggleSeat();
   if (event.code === 'KeyL' && !outside) crew.callLift();
   if (event.code === 'KeyO') toggleAirlock();
+  if (event.code === 'KeyJ') jump.cycleTarget(ship.frame);
+  if (event.code === 'Enter') jump.engage(ship);
+  if (event.code === 'Backspace') {
+    jump.abort();
+    event.preventDefault();
+  }
   const target = warpKeys[event.code];
   if (target && BODY_IDS.includes(target) && freeCamera) warpObserver(target);
 });
 
 window.addEventListener('resize', () => renderer.resize());
 window.orbit = {
-  ship, shipView, pilot, crew, observer, views, renderer, surface, cockpit, visor,
+  ship, shipView, pilot, crew, observer, views, renderer, surface, cockpit, visor, jump, placeOnArrivalOrbit,
   toggleAirlock,
   get outside() {
     return outside;
@@ -200,6 +209,11 @@ function step(dt) {
     ship.controls.vertical = 0;
   }
   updateShip(ship, { groundAltitude: groundAltitude() }, dt);
+  jump.update(dt, ship, (target) => {
+    placeOnArrivalOrbit(ship, target, (envTime % 1000) / 1000);
+    surface.detach();
+  });
+  starfield.setStretch(jump.state === 'transit' ? Math.sin(jump.progress * Math.PI) : 0);
   if (outside) {
     const walk = pilot.walkInput();
     add(anchorWorld, views.positions[ship.frame], ship.position);
@@ -258,6 +272,7 @@ function step(dt) {
   } else if (crew.flying) orientation = pilot.cameraOrientation(ship.orientation);
   else orientation = pilot.crewOrientation(ship.orientation, crew.yaw, crew.pitch);
 
+  shipView.setInterior(!freeCamera && !outside && !pilot.third);
   shipView.update(
     ship,
     origin,
@@ -267,7 +282,7 @@ function step(dt) {
   );
   const inCockpit = !freeCamera && !pilot.third && crew.flying && !outside;
   cockpit.visible = inCockpit;
-  if (inCockpit) cockpit.draw(ship, ship.frame);
+  if (inCockpit) cockpit.draw(ship, ship.frame, jump);
 
   const inSuit = Boolean(outside) && !freeCamera && needsSuit(outside.frame, outside.altitude);
   visor.visible = inSuit;
