@@ -108,6 +108,21 @@ export class Pilot {
     this.gear = this.gear === false;
   }
 
+  // Orientation from a look direction and a local up, for anyone standing on a sphere:
+  // there is no fixed world "up" once you can walk to the other side of a planet.
+  lookOrientation(forward, up) {
+    if (!this.lookMatrix) {
+      this.lookMatrix = new THREE.Matrix4();
+      this.lookTarget = new THREE.Vector3();
+      this.lookUp = new THREE.Vector3();
+      this.lookZero = new THREE.Vector3();
+    }
+    this.lookTarget.set(forward.x, forward.y, forward.z).normalize();
+    this.lookUp.set(up.x, up.y, up.z).normalize();
+    this.lookMatrix.lookAt(this.lookZero, this.lookTarget, this.lookUp);
+    return this.orientation.setFromRotationMatrix(this.lookMatrix);
+  }
+
   crewOrientation(shipOrientation, yaw, pitch) {
     this.shipQuaternion.set(shipOrientation.x, shipOrientation.y, shipOrientation.z, shipOrientation.w);
     this.euler.set(pitch, yaw, 0, 'YXZ');

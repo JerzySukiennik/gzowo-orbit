@@ -12,14 +12,18 @@ export const SURFACE_PROFILE = {
   mars: { seaLevel: 0, detailAmplitude: 16, detailFrequency: 30000 },
 };
 
+// Real relief, not dramatic relief. The lunar maria sit 2-3 km below the highlands and
+// even Mare Orientale is nowhere near 20 km deep; an unchecked crater depth scaled by a
+// 270 km basin radius produced exactly that, and dropped an astronaut into a hole the
+// size of a mountain range.
 function moonHeight(d) {
   const maria = fbm(d.x * 1.7 + 11, d.y * 1.7, d.z * 1.7, 4);
-  const lowland = Math.min(0, maria + 0.18) * 0.012;
-  const rough = fbm(d.x * 9 + 3, d.y * 9, d.z * 9, 6) * 0.0016;
+  const lowland = Math.min(0, maria + 0.18) * 0.0016;
+  const rough = fbm(d.x * 9 + 3, d.y * 9, d.z * 9, 6) * 0.0006;
   const craters =
-    craterField(d.x, d.y, d.z, 0.31, 0.17) +
-    craterField(d.x * 1.31 + 5, d.y * 1.31, d.z * 1.31, 0.085, 0.2) +
-    craterField(d.x * 2.7 + 17, d.y * 2.7, d.z * 2.7, 0.021, 0.22);
+    craterField(d.x, d.y, d.z, 0.31, 0.012) +
+    craterField(d.x * 1.31 + 5, d.y * 1.31, d.z * 1.31, 0.085, 0.05) +
+    craterField(d.x * 2.7 + 17, d.y * 2.7, d.z * 2.7, 0.021, 0.12);
   return lowland + rough + craters;
 }
 

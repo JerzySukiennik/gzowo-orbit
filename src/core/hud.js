@@ -44,7 +44,7 @@ export class Hud {
 
     const days = envTime / 86400;
     this.left.innerHTML = `
-      <h1>GZOWO ORBIT<span>phase 2 &middot; ship${state.freeCamera ? ' &middot; free camera' : ''}</span></h1>
+      <h1>GZOWO ORBIT<span>phase 4 &middot; ${state.outside ? 'astronaut' : 'ship'}${state.freeCamera ? ' &middot; free camera' : ''}</span></h1>
       <table>
         <tr><th>body</th><th>altitude</th><th>pass</th></tr>
         ${rows}
@@ -76,8 +76,22 @@ export class Hud {
         <tr><td>patches drawn</td><td>${terrainStats.patches}</td></tr>
         <tr><td>patches loaded</td><td>${terrainStats.loaded}</td></tr>
         <tr><td>building</td><td>${terrainStats.inflight}</td></tr>
-        <tr><td>crew</td><td>${state.crew ? (state.crew.seated ? `seated · ${state.crew.seat}` : state.crew.mode) : '—'}</td></tr>
-        <tr><td>deck</td><td>${state.crew && state.crew.room ? state.crew.room.name : '—'}</td></tr>
+        <tr><td>crew</td><td>${
+          state.outside
+            ? `outside · ${state.outside.mode}`
+            : state.crew
+              ? state.crew.seated
+                ? `seated · ${state.crew.seat}`
+                : state.crew.mode
+              : '—'
+        }</td></tr>
+        <tr><td>${state.outside ? 'oxygen' : 'deck'}</td><td>${
+          state.outside
+            ? `${Math.floor(state.outside.oxygen / 60)}:${String(Math.floor(state.outside.oxygen % 60)).padStart(2, '0')}`
+            : state.crew && state.crew.room
+              ? state.crew.room.name
+              : '—'
+        }</td></tr>
         <tr><td>felt gravity</td><td>${state.crew ? `${state.crew.gravity.toFixed(2)} m/s²` : '—'}</td></tr>
         <tr><td>draw calls</td><td>${info.calls}</td></tr>
         <tr><td>fps</td><td>${this.fps.toFixed(0)}</td></tr>
