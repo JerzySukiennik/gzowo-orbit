@@ -76,6 +76,17 @@ export class BodyViews {
     this.scenePosition = vec3();
     this.sunOffset = vec3();
     this.sunDirection = vec3();
+    this.sunDirections = {};
+    this.suppressed = null;
+    for (const id of BODY_IDS) this.sunDirections[id] = vec3(1, 0, 0);
+  }
+
+  quaternionOf(id) {
+    return this.entries.find((entry) => entry.id === id).mesh.quaternion;
+  }
+
+  sunDirectionOf(id) {
+    return this.sunDirections[id];
   }
 
   updatePositions(time) {
@@ -97,12 +108,14 @@ export class BodyViews {
       this.spin.setFromAxisAngle(this.spinAxis, rotationAt(id, time));
       mesh.quaternion.copy(this.tilt).multiply(this.spin);
 
+      sub(this.sunOffset, this.positions.sun, worldPosition);
+      normalize(this.sunDirections[id], this.sunOffset);
       if (material.uniforms) {
-        sub(this.sunOffset, this.positions.sun, worldPosition);
-        normalize(this.sunDirection, this.sunOffset);
-        material.uniforms.uSunDir.value.set(this.sunDirection.x, this.sunDirection.y, this.sunDirection.z);
+        const sun = this.sunDirections[id];
+        material.uniforms.uSunDir.value.set(sun.x, sun.y, sun.z);
       }
 
+      mesh.visible = id !== this.suppressed;
       const target = placement.far ? this.farScene : this.nearScene;
       if (mesh.parent !== target) target.add(mesh);
     }

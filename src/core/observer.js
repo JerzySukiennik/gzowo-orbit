@@ -96,6 +96,13 @@ export class Observer {
     this.cruiseSpeed = Math.max(2000, body.radius / 25);
   }
 
+  orientTo(forward, up) {
+    const target = new THREE.Vector3(forward.x, forward.y, forward.z).normalize();
+    const upVector = new THREE.Vector3(up.x, up.y, up.z).normalize();
+    const matrix = new THREE.Matrix4().lookAt(new THREE.Vector3(0, 0, 0), target, upVector);
+    this.quaternion.setFromRotationMatrix(matrix);
+  }
+
   update(dt) {
     this.forward.set(0, 0, -1).applyQuaternion(this.quaternion);
     this.right.set(1, 0, 0).applyQuaternion(this.quaternion);
