@@ -21,6 +21,9 @@ import { Visor } from './crew/visor.js';
 import { rotateVector } from './shared/quat.js';
 import { createShip, updateShip, SHIP } from './ship/flight.js';
 import { JumpDrive, placeOnArrivalOrbit } from './ship/jump.js';
+import { CrewSession } from './net/session.js';
+import { CrewView } from './net/crewview.js';
+import { ACTION } from './net/protocol.js';
 import { circularSpeed } from './shared/orbit.js';
 import { TIME_SCALE } from './shared/units.js';
 import { BODIES, BODY_IDS, velocityAt } from './shared/bodies.js';
@@ -47,6 +50,21 @@ const cockpit = new Cockpit(shipView.group, {
 const observer = new Observer(canvas);
 const visor = new Visor(renderer.nearScene);
 const jump = new JumpDrive();
+const session = new CrewSession({ name: 'Gzowo crew' });
+const crewView = new CrewView(renderer.nearScene);
+const SELF_ID = 'local';
+
+// Networking is optional and silent about it: without assets/firebase.json the game is a
+// single-crew game and says so, rather than failing somewhere deep in a handshake.
+fetch('assets/firebase.json')
+  .then((response) => (response.ok ? response.json() : null))
+  .then((config) => {
+    if (config && config.databaseURL) {
+      session.signalling = new (session.signalling.constructor)(config);
+      session.status = 'ready to host';
+    }
+  })
+  .catch(() => {});
 const hud = new Hud(document.getElementById('hud'));
 
 const AIRLOCK_LOCAL = { x: 10.5, y: 0, z: -3 };
@@ -104,6 +122,13 @@ window.addEventListener('keydown', (event) => {
   if (event.code === 'KeyE' && !outside) crew.toggleSeat();
   if (event.code === 'KeyL' && !outside) crew.callLift();
   if (event.code === 'KeyO') toggleAirlock();
+  if (event.code === 'KeyN') session.host().then((c) => c && console.log('crew code', c));
+  if (event.code === 'KeyM') {
+    session.listCrews().then((crews) => {
+      if (crews.length) session.join(crews[0].code);
+      else session.status = 'no open crews';
+    });
+  }
   if (event.code === 'KeyJ') jump.cycleTarget(ship.frame);
   if (event.code === 'Enter') jump.engage(ship);
   if (event.code === 'Backspace') {
@@ -116,7 +141,7 @@ window.addEventListener('keydown', (event) => {
 
 window.addEventListener('resize', () => renderer.resize());
 window.orbit = {
-  ship, shipView, pilot, crew, observer, views, renderer, surface, cockpit, visor, jump, placeOnArrivalOrbit,
+  ship, shipView, pilot, crew, observer, views, renderer, surface, cockpit, visor, jump, placeOnArrivalOrbit, session, crewView,
   toggleAirlock,
   get outside() {
     return outside;
@@ -190,6 +215,39 @@ function groundAltitude() {
   return radius - (body.radius + surface.heightAt(groundDirection));
 }
 
+// A guest owns nothing but its own hands. Ship state arrives as fact and is copied in.
+function applyGuestSnapshot(state) {
+  copy(ship.position, state.ship.position);
+  copy(ship.velocity, state.ship.velocity);
+  Object.assign(ship.orientation, state.ship.orientation);
+  ship.frame = state.ship.frame;
+  ship.fuel = state.ship.fuel;
+  ship.hull = state.ship.hull;
+  ship.landed = state.ship.landed;
+  ship.controls.main = state.ship.controls.main;
+  ship.controls.lift = state.ship.controls.lift;
+  ship.controls.gear = state.ship.controls.gear;
+}
+
+function localCrewList() {
+  const member = outside
+    ? { id: SELF_ID, name: 'Jurek', aboard: false, position: outside.position, yaw: outside.yaw, frame: outside.frame, oxygen: outside.oxygen }
+    : { id: SELF_ID, name: 'Jurek', aboard: true, position: crew.position, yaw: crew.yaw, seat: crew.seat };
+  return [member];
+}
+
+function guestInput() {
+  const walk = pilot.walkInput();
+  return {
+    pitch: ship.controls.pitch, yaw: ship.controls.yaw, roll: ship.controls.roll,
+    main: pilot.mainThrottle, lift: pilot.liftThrottle,
+    strafe: ship.controls.strafe, vertical: ship.controls.vertical,
+    walkForward: walk.forward, walkStrafe: walk.strafe, run: walk.run, jump: pilot.held('Space'),
+    lookYaw: outside ? outside.yaw : crew.yaw, lookPitch: outside ? outside.pitch : crew.pitch,
+    actions: 0,
+  };
+}
+
 function step(dt) {
   envTime += dt * TIME_SCALE;
 
@@ -208,7 +266,11 @@ function step(dt) {
     ship.controls.strafe = 0;
     ship.controls.vertical = 0;
   }
-  updateShip(ship, { groundAltitude: groundAltitude() }, dt);
+  if (session.role === 'guest' && session.guestState) {
+    applyGuestSnapshot(session.guestState);
+  } else {
+    updateShip(ship, { groundAltitude: groundAltitude() }, dt);
+  }
   jump.update(dt, ship, (target) => {
     placeOnArrivalOrbit(ship, target, (envTime % 1000) / 1000);
     surface.detach();
@@ -290,6 +352,18 @@ function step(dt) {
     visor.place(orientation);
     visor.draw(outside, { tether: length(anchorWorld) > 0 ? distance(outside.position, anchorWorld) : 0 });
   }
+
+  crewView.update(
+    session.role === 'guest' && session.guestState ? session.guestState.crew : localCrewList(),
+    ship,
+    add(shipWorld, views.positions[ship.frame], ship.position),
+    views.positions,
+    origin,
+    SELF_ID
+  );
+
+  if (session.role === 'host') session.broadcast({ time: envTime, ship, crew: localCrewList() }, performance.now() / 1000);
+  else if (session.role === 'guest') session.sendInput(guestInput());
 
   renderer.render(orientation);
 
