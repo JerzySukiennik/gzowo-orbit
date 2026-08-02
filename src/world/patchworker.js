@@ -350,7 +350,12 @@ async function build(job) {
   const cornerA = faceUvToDirection(face, u0, v0, { x: 0, y: 0, z: 0 });
   const cornerB = faceUvToDirection(face, u1, v1, { x: 0, y: 0, z: 0 });
   const patchSize = Math.hypot(cornerA.x - cornerB.x, cornerA.y - cornerB.y, cornerA.z - cornerB.z) * radius;
-  const skirt = Math.max(patchSize * 0.06, (maxH - minH) * 1.2 + 40);
+  // A skirt only has to hide the step between one level of detail and the next, which is
+  // about one vertex spacing plus whatever the relief does inside the patch. Scaling it
+  // with the whole patch instead put a NINE KILOMETRE wall under every coarse tile, and
+  // the planet came out looking sliced into plates.
+  const spacing = patchSize / resolution;
+  const skirt = Math.min(patchSize * 0.02, spacing * 1.5 + (maxH - minH) * 0.6 + 30);
 
   const worldOf = (i, j, out) => {
     const clampedI = Math.max(0, Math.min(resolution, i));

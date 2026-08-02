@@ -13,7 +13,9 @@ import { SHIP } from './flight.js';
 // wall of their own ship.
 export const COCKPIT = { x: 0, y: 3.6, z: -63 };
 export const CHASE = { x: 0, y: 26, z: 128 };
-const EXPECTED_LENGTH = 120;
+// The GLB is the HULL only: 100 m. The glazed bridge module in interior.glb adds the
+// rest of the ship's 120 m at the front.
+const EXPECTED_LENGTH = 100;
 
 export class ShipView {
   constructor(scene) {
@@ -109,14 +111,9 @@ export class ShipView {
     return out;
   }
 
-  // The bridge sits inside the nose cone, so with the hull drawn the pilot faces the
-  // inside of their own ship instead of the windscreen. The hull is hidden while the
-  // camera is aboard; the interior shell is closed, so the only way out is the glass.
-  setInterior(inside) {
-    if (this.model) this.model.visible = !inside;
-    if (this.interior) this.interior.visible = true;
-  }
-
+  // The hull used to be hidden whenever the camera was aboard, because the nose closed
+  // over the bridge and the pilot faced the inside of their own ship. The nose is open
+  // now, so the ship stays visible from every seat - which is the point of having one.
   update(ship, cameraOrigin, bodyPosition, throttle, sunDirection) {
     if (sunDirection) this.sunLight.position.set(sunDirection.x * 1000, sunDirection.y * 1000, sunDirection.z * 1000);
     if (!this.ready) return;

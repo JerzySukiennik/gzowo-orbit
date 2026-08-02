@@ -85,6 +85,13 @@
       .setting input { width: 100%; accent-color: #7fd4ff; }
       #hud { pointer-events: none; }
       #hud .settings, #hud .shell { pointer-events: auto; }
+      #lockhint {
+        position: fixed; left: 50%; top: 62%; transform: translateX(-50%);
+        padding: 8px 18px; border: 1px solid rgba(140,180,220,0.35);
+        background: rgba(6,12,20,0.55); color: var(--ink);
+        font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+        pointer-events: none; display: none; z-index: 9;
+      }
       #crosshair {
         position: fixed;
         left: 50%;
@@ -102,6 +109,7 @@
     <canvas id="view"></canvas>
     <div id="hud"></div>
     <div id="crosshair"></div>
+    <div id="lockhint">click to take the controls</div>
     <script type="importmap">
       {
         "imports": {

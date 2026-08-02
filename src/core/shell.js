@@ -71,6 +71,10 @@ export class Shell {
     this.started = true;
     this.overlay.style.display = 'none';
     this.hooks.start();
+    // Dismissing the menu has to hand the mouse to the ship in the same gesture. Without
+    // it the game looks broken in the most complete way possible: throttles respond,
+    // nothing steers, and nothing on screen says why.
+    this.hooks.capture();
   }
 
   buildSettings() {

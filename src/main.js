@@ -88,6 +88,7 @@ const hud = new Hud(document.getElementById('hud'));
 const audio = new Audio();
 const shell = new Shell(document.getElementById('hud'), {
   start: () => audio.start(),
+  capture: () => canvas.requestPointerLock(),
   volume: (value) => audio.setVolume(value),
   quality: (value) => renderer.setQuality(value),
   effects: (values) => renderer.post.apply(values),
@@ -226,6 +227,13 @@ window.addEventListener('keydown', (event) => {
 });
 
 window.addEventListener('resize', () => renderer.resize());
+
+// The hint is the honest fix for a mouse that is not captured: it says what to do and
+// disappears the moment you do it.
+const lockHint = document.getElementById('lockhint');
+setInterval(() => {
+  lockHint.style.display = shell.started && !pilot.locked ? 'block' : 'none';
+}, 200);
 window.orbit = {
   ship, shipView, pilot, crew, observer, views, renderer, surface, cockpit, visor, jump, placeOnArrivalOrbit, session, crewView, cargo, digSite, drill, ledger,
   get docking() { return docking; },
@@ -534,7 +542,6 @@ function step(dt) {
   } else if (crew.flying) orientation = pilot.cameraOrientation(ship.orientation);
   else orientation = pilot.crewOrientation(ship.orientation, crew.yaw, crew.pitch);
 
-  shipView.setInterior(!freeCamera && !outside && !pilot.third);
   shipView.update(
     ship,
     origin,
