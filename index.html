@@ -60,6 +60,31 @@
       .far { color: var(--dim); }
       .near { color: #8fd6a8; }
       p { margin-top: 10px; color: var(--dim); font-size: 10px; line-height: 1.7; }
+      .shell {
+        position: fixed; inset: 0; display: grid; place-items: center;
+        background: radial-gradient(circle at 50% 40%, rgba(20,32,48,0.75), rgba(0,0,0,0.94));
+        z-index: 10;
+      }
+      .shell-card { text-align: center; max-width: 640px; padding: 0 24px; }
+      .shell-card h2 { font-size: 34px; letter-spacing: 0.4em; font-weight: 600; }
+      .shell-sub { color: var(--dim); margin-top: 10px; font-size: 12px; letter-spacing: 0.12em; }
+      .shell-go {
+        margin-top: 28px; padding: 12px 26px; background: transparent; color: var(--ink);
+        border: 1px solid rgba(140,180,220,0.45); font: inherit; letter-spacing: 0.18em;
+        cursor: pointer; text-transform: uppercase;
+      }
+      .shell-go:hover { background: rgba(127,212,255,0.1); }
+      .shell-keys {
+        margin-top: 30px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 14px;
+        color: var(--dim); font-size: 10px; letter-spacing: 0.08em;
+      }
+      .settings { top: auto; bottom: 20px; left: 20px; width: 320px; pointer-events: auto; }
+      .setting { display: grid; grid-template-columns: 92px 1fr 44px; align-items: center; gap: 8px; margin: 6px 0; }
+      .setting span { color: var(--dim); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
+      .setting em { font-style: normal; text-align: right; font-size: 11px; }
+      .setting input { width: 100%; accent-color: #7fd4ff; }
+      #hud { pointer-events: none; }
+      #hud .settings, #hud .shell { pointer-events: auto; }
       #crosshair {
         position: fixed;
         left: 50%;

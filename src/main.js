@@ -10,6 +10,9 @@ import { createStarfield } from './core/sky.js';
 import { BodyViews } from './core/bodyviews.js';
 import { Observer } from './core/observer.js';
 import { Hud } from './core/hud.js';
+import { Shell } from './core/shell.js';
+import { Audio } from './core/audio.js';
+import { EFFECTS } from './core/post.js';
 import { PlanetSurface } from './world/planetsurface.js';
 import { ShipView, COCKPIT, CHASE } from './ship/shipview.js';
 import { Pilot } from './ship/pilot.js';
@@ -24,6 +27,8 @@ import { JumpDrive, placeOnArrivalOrbit } from './ship/jump.js';
 import { createCargo, cargoMass, RESOURCES, depositNear } from './work/resources.js';
 import { createDigSite, createDrill, fireLaser, deployDrill, updateDrill, cratersFor, TOOL } from './work/mining.js';
 import { createLedger, dockingState, sellCargo, refuel, refuelCost, buyModule, offerContracts, stationPosition, MODULES, STATION } from './econ/station.js';
+import { createRover, updateRover, roverEye, roverForward, roverUp, ROVER } from './work/rover.js';
+import { healthOf, worstSystem, repair, rescueState, tickRescue, assist, beacon, SYSTEMS } from './crew/rescue.js';
 import { CrewSession } from './net/session.js';
 import { CrewView } from './net/crewview.js';
 import { ACTION } from './net/protocol.js';
@@ -62,6 +67,10 @@ const drill = createDrill();
 const ledger = createLedger();
 let docking = { docked: false, range: Infinity, closing: 0, hold: 0 };
 let workMessage = '';
+let rover = null;
+let driving = false;
+const roverAim = vec3();
+let repairing = null;
 const aimDirection = vec3();
 
 // Networking is optional and silent about it: without assets/firebase.json the game is a
@@ -76,6 +85,15 @@ fetch('assets/firebase.json')
   })
   .catch(() => {});
 const hud = new Hud(document.getElementById('hud'));
+const audio = new Audio();
+const shell = new Shell(document.getElementById('hud'), {
+  start: () => audio.start(),
+  volume: (value) => audio.setVolume(value),
+  quality: (value) => renderer.setQuality(value),
+  effects: (values) => renderer.post.apply(values),
+  save: () => saveGame(),
+  load: () => loadGame(),
+});
 
 const AIRLOCK_LOCAL = { x: 10.5, y: 0, z: -3 };
 let outside = null;
@@ -167,6 +185,36 @@ window.addEventListener('keydown', (event) => {
     const result = next ? buyModule(ledger, next.id, { cargo }) : { ok: false, reason: 'nothing affordable' };
     workMessage = result.ok ? `fitted ${result.module.name}` : result.reason;
   }
+  if (event.code === 'KeyB') {
+    if (driving) {
+      driving = false;
+      if (outside) {
+        copy(outside.position, rover.position);
+        addScaled(outside.position, outside.position, roverUp(rover, roverAim), ROVER.rideHeight + 0.2);
+      }
+      workMessage = 'left the rover';
+    } else if (outside && rover && distance(outside.position, rover.position) < 8) {
+      driving = true;
+      workMessage = 'driving';
+    } else if (outside && !rover) {
+      rover = createRover(outside.frame, outside.position, outside.yaw);
+      workMessage = 'rover unloaded';
+    } else if (outside && rover) {
+      workMessage = `rover is ${Math.round(distance(outside.position, rover.position))} m away`;
+    }
+  }
+  if (event.code === 'KeyK' && outside) {
+    const system = worstSystem(ship);
+    workMessage = system ? `repairing ${SYSTEMS[system].name}` : 'nothing to repair';
+    repairing = system;
+  }
+  if (event.code === 'KeyP' && outside && outside.down) {
+    const loss = beacon(cargo);
+    assist(outside);
+    outside = null;
+    crew.seat = null;
+    workMessage = `beacon fired, lost ${loss.value} credits of cargo`;
+  }
   if (event.code === 'KeyJ') jump.cycleTarget(ship.frame);
   if (event.code === 'Enter') jump.engage(ship);
   if (event.code === 'Backspace') {
@@ -181,6 +229,8 @@ window.addEventListener('resize', () => renderer.resize());
 window.orbit = {
   ship, shipView, pilot, crew, observer, views, renderer, surface, cockpit, visor, jump, placeOnArrivalOrbit, session, crewView, cargo, digSite, drill, ledger,
   get docking() { return docking; },
+  get rover() { return rover; },
+  healthOf, rescueState, shell, audio, saveGame, loadGame, EFFECTS,
   toggleAirlock,
   get outside() {
     return outside;
@@ -304,6 +354,52 @@ function guestInput() {
   };
 }
 
+// One slot, one format. The same object goes to localStorage now and to Firebase when a
+// crew is hosting, so a save made solo is a save a crew can pick up.
+function saveGame() {
+  const state = {
+    version: 1,
+    envTime,
+    ship: {
+      frame: ship.frame,
+      position: [ship.position.x, ship.position.y, ship.position.z],
+      velocity: [ship.velocity.x, ship.velocity.y, ship.velocity.z],
+      orientation: [ship.orientation.x, ship.orientation.y, ship.orientation.z, ship.orientation.w],
+      fuel: ship.fuel,
+      hull: ship.hull,
+      systems: healthOf(ship),
+    },
+    cargo: cargo.held,
+    ledger,
+    craters: digSite.craters,
+  };
+  const ok = Shell.save(state);
+  workMessage = ok ? 'saved' : 'could not save';
+  return ok;
+}
+
+function loadGame() {
+  const state = Shell.load();
+  if (!state) {
+    workMessage = 'no save found';
+    return false;
+  }
+  envTime = state.envTime;
+  ship.frame = state.ship.frame;
+  set(ship.position, ...state.ship.position);
+  set(ship.velocity, ...state.ship.velocity);
+  Object.assign(ship.orientation, { x: state.ship.orientation[0], y: state.ship.orientation[1], z: state.ship.orientation[2], w: state.ship.orientation[3] });
+  ship.fuel = state.ship.fuel;
+  ship.hull = state.ship.hull;
+  ship.systems = state.ship.systems;
+  cargo.held = state.cargo || {};
+  Object.assign(ledger, state.ledger || {});
+  digSite.craters = state.craters || {};
+  surface.detach();
+  workMessage = 'loaded';
+  return true;
+}
+
 function step(dt) {
   envTime += dt * TIME_SCALE;
 
@@ -345,6 +441,30 @@ function step(dt) {
     workMessage = `drill: ${Math.round(drill.produced)} kg of ${RESOURCES[drill.kind].name}`;
   }
 
+  if (rover) {
+    const roverRadius = length(rover.position);
+    scale(roverAim, rover.position, 1 / roverRadius);
+    const groundHeight = surface.bodyId === rover.frame ? surface.heightAt(roverAim) : 0;
+    const walk = driving ? pilot.walkInput() : { forward: 0, strafe: 0 };
+    updateRover(rover, { throttle: walk.forward, steer: walk.strafe, brake: pilot.held('Space') }, { groundHeight }, dt);
+  }
+
+  if (repairing && outside) {
+    const progress = repair(ship, repairing, dt);
+    workMessage = `${SYSTEMS[repairing].name} ${Math.round(progress.progress * 100)}%`;
+    if (progress.done) repairing = null;
+  } else if (repairing) {
+    repairing = null;
+  }
+
+  if (outside && outside.down && tickRescue(outside, dt)) {
+    const loss = beacon(cargo);
+    assist(outside);
+    outside = null;
+    crew.seat = null;
+    workMessage = `beacon fired, lost ${loss.value} credits of cargo`;
+  }
+
   docking = dockingState(ship, envTime, docking);
 
   jump.update(dt, ship, (target) => {
@@ -377,6 +497,8 @@ function step(dt) {
   if (freeCamera) {
     observer.update(dt);
     add(origin, views.positions[observer.frame], observer.local);
+  } else if (driving && rover) {
+    add(origin, views.positions[rover.frame], roverEye(rover, roverAim));
   } else if (outside) {
     const frame = localFrame(outside.position);
     add(origin, views.positions[outside.frame], outside.position);
@@ -404,7 +526,9 @@ function step(dt) {
 
   let orientation;
   if (freeCamera) orientation = observer.quaternion;
-  else if (outside) {
+  else if (driving && rover) {
+    orientation = pilot.lookOrientation(roverForward(rover, lookVector), roverUp(rover, roverAim));
+  } else if (outside) {
     lookDirection(outside, lookVector);
     orientation = pilot.lookOrientation(lookVector, localFrame(outside.position).up);
   } else if (crew.flying) orientation = pilot.cameraOrientation(ship.orientation);
@@ -445,6 +569,18 @@ function step(dt) {
   else if (session.role === 'guest') session.sendInput(guestInput());
 
   renderer.render(orientation);
+
+  audio.update(
+    {
+      thrust: Math.min(1, ship.controls.main + ship.controls.lift),
+      density: ship.telemetry.density,
+      aboard: !outside,
+      alarm: ship.hull < 0.6 || (outside && outside.oxygen < 120),
+    },
+    dt
+  );
+  if (near) audio.loadAmbient(near);
+  shell.autoDegrade(dt * 1000);
 
   hud.tick(dt);
   hud.update({

@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { NEAR_FAR_PLANE, FAR_NEAR_PLANE, FAR_FAR_PLANE } from '../shared/frame.js';
+import { Post } from './post.js';
 
 const FOV = 55;
 
@@ -31,6 +32,7 @@ export class LayeredRenderer {
 
     this.cameras = [this.starCamera, this.farCamera, this.nearCamera];
     this.pixelRatioCap = 1.5;
+    this.post = new Post(this.renderer);
     this.resize();
   }
 
@@ -44,6 +46,7 @@ export class LayeredRenderer {
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
     }
+    if (this.post) this.post.resize();
   }
 
   setQuality(pixelRatioCap) {
@@ -59,12 +62,16 @@ export class LayeredRenderer {
     }
 
     this.renderer.info.reset();
+    const target = this.post.begin();
+    this.renderer.setRenderTarget(target);
     this.renderer.clear(true, true, true);
     this.renderer.render(this.starScene, this.starCamera);
     this.renderer.clearDepth();
     this.renderer.render(this.farScene, this.farCamera);
     this.renderer.clearDepth();
     this.renderer.render(this.nearScene, this.nearCamera);
+    this.renderer.setRenderTarget(null);
+    this.post.finish(performance.now() / 1000);
   }
 
   get info() {

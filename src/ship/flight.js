@@ -8,6 +8,7 @@ import { vec3, set, copy, add, sub, scale, addScaled, dot, cross, length, normal
 import { quat, rotateVector, integrateOrientation, fromAxisAngle, multiply, normalizeQuat } from '../shared/quat.js';
 import { gravityAt, airDensity, hasAtmosphere } from '../shared/orbit.js';
 import { BODIES } from '../shared/bodies.js';
+import { applyStress, thrustFactor } from '../crew/rescue.js';
 
 export const SHIP = {
   dryMass: 620000,
@@ -152,8 +153,9 @@ export function updateShip(ship, environment, dt) {
 
   const liftDemand = Math.max(0, Math.min(1, controls.lift));
   const mainDemand = Math.max(0, Math.min(1, controls.main));
-  const liftForce = ship.fuel > 0 ? liftDemand * SHIP.liftThrust : 0;
-  const mainForce = ship.fuel > 0 ? mainDemand * SHIP.mainThrust : 0;
+  const health = thrustFactor(ship);
+  const liftForce = ship.fuel > 0 ? liftDemand * SHIP.liftThrust * health : 0;
+  const mainForce = ship.fuel > 0 ? mainDemand * SHIP.mainThrust * health : 0;
   addScaled(force, force, up, liftForce);
   addScaled(force, force, forward, mainForce);
   addScaled(force, force, right, controls.strafe * SHIP.liftThrust * 0.06);
@@ -188,6 +190,7 @@ export function updateShip(ship, environment, dt) {
   scale(ship.angularVelocity, ship.angularVelocity, Math.max(0, 1 - damping * dt));
   integrateOrientation(ship.orientation, ship.angularVelocity, dt);
 
+  applyStress(ship, dt);
   if (ship.lastImpact > 0) ship.lastImpact -= dt;
 
   normalize(scratch, ship.position);
