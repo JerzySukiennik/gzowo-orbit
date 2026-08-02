@@ -56,14 +56,29 @@ export class Pilot {
     return this.keys.has(code);
   }
 
+  takeMouse() {
+    const dx = (this.stickX || 0) * 0.0022;
+    const dy = (this.stickY || 0) * 0.0022;
+    this.stickX = 0;
+    this.stickY = 0;
+    return { dx, dy };
+  }
+
+  walkInput() {
+    return {
+      forward: (this.held('KeyW') ? 1 : 0) - (this.held('KeyS') ? 1 : 0),
+      strafe: (this.held('KeyD') ? 1 : 0) - (this.held('KeyA') ? 1 : 0),
+      vertical: (this.held('Space') ? 1 : 0) - (this.held('ControlLeft') || this.held('ControlRight') ? 1 : 0),
+      run: this.held('ShiftLeft') || this.held('ShiftRight'),
+    };
+  }
+
   // Mouse movement is a rate command on the control axes rather than an absolute
   // position: there is no air to centre a stick against in vacuum, so the ship holds
   // whatever rotation you last gave it until you stop it.
-  sample(dt) {
-    const pitch = Math.max(-1, Math.min(1, (this.stickY || 0) * 0.02));
-    const yaw = Math.max(-1, Math.min(1, -(this.stickX || 0) * 0.02));
-    this.stickX = 0;
-    this.stickY = 0;
+  sample(dt, mouse) {
+    const pitch = Math.max(-1, Math.min(1, mouse.dy * 9));
+    const yaw = Math.max(-1, Math.min(1, -mouse.dx * 9));
 
     const mainUp = this.held('KeyW') ? 1 : 0;
     const mainDown = this.held('KeyS') ? 1 : 0;
@@ -91,6 +106,13 @@ export class Pilot {
 
   toggleGear() {
     this.gear = this.gear === false;
+  }
+
+  crewOrientation(shipOrientation, yaw, pitch) {
+    this.shipQuaternion.set(shipOrientation.x, shipOrientation.y, shipOrientation.z, shipOrientation.w);
+    this.euler.set(pitch, yaw, 0, 'YXZ');
+    this.headQuaternion.setFromEuler(this.euler);
+    return this.orientation.copy(this.shipQuaternion).multiply(this.headQuaternion);
   }
 
   cameraOrientation(shipOrientation) {

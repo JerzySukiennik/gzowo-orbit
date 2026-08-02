@@ -11,9 +11,11 @@ import { BodyViews } from './core/bodyviews.js';
 import { Observer } from './core/observer.js';
 import { Hud } from './core/hud.js';
 import { PlanetSurface } from './world/planetsurface.js';
-import { ShipView, COCKPIT } from './ship/shipview.js';
+import { ShipView, COCKPIT, CHASE } from './ship/shipview.js';
 import { Pilot } from './ship/pilot.js';
 import { Cockpit } from './ship/cockpit.js';
+import { Crew } from './ship/crew.js';
+import { SEATS } from './ship/deck.js';
 import { createShip, updateShip, SHIP } from './ship/flight.js';
 import { circularSpeed } from './shared/orbit.js';
 import { TIME_SCALE } from './shared/units.js';
@@ -30,7 +32,13 @@ const views = new BodyViews(renderer.farScene, renderer.nearScene);
 const surface = new PlanetSurface(renderer.nearScene);
 const shipView = new ShipView(renderer.nearScene);
 const pilot = new Pilot(canvas);
-const cockpit = new Cockpit(shipView.group, COCKPIT);
+const crew = new Crew();
+const pilotSeat = SEATS.find((seat) => seat.id === 'pilot');
+const cockpit = new Cockpit(shipView.group, {
+  x: pilotSeat.position.x,
+  y: pilotSeat.position.y + 1.62,
+  z: pilotSeat.position.z - 0.05,
+});
 const observer = new Observer(canvas);
 const hud = new Hud(document.getElementById('hud'));
 
@@ -40,6 +48,8 @@ const groundDirection = vec3();
 const frameVelocity = vec3();
 const nextFrameVelocity = vec3();
 const shipWorld = vec3();
+const eyeLocal = vec3();
+const IDLE_INPUT = { forward: 0, strafe: 0, vertical: 0, run: false };
 
 let envTime = 0;
 let last = performance.now();
@@ -64,6 +74,9 @@ const ship = createShip(
   scale(ship.velocity, ship.velocity, startSpeed / length(ship.velocity));
 }
 
+crew.seat = 'pilot';
+crew.yaw = pilotSeat.facing;
+
 function warpObserver(bodyId) {
   sub(sunward, views.positions.sun, views.positions[bodyId]);
   if (bodyId === 'sun') set(sunward, 0, 0, 1);
@@ -75,12 +88,14 @@ const warpKeys = { Digit1: 'sun', Digit2: 'earth', Digit3: 'moon', Digit4: 'mars
 window.addEventListener('keydown', (event) => {
   if (event.code === 'KeyC') freeCamera = !freeCamera;
   if (event.code === 'KeyG') pilot.toggleGear();
+  if (event.code === 'KeyE') crew.toggleSeat();
+  if (event.code === 'KeyL') crew.callLift();
   const target = warpKeys[event.code];
   if (target && BODY_IDS.includes(target) && freeCamera) warpObserver(target);
 });
 
 window.addEventListener('resize', () => renderer.resize());
-window.orbit = { ship, shipView, pilot, observer, views, renderer, surface, cockpit };
+window.orbit = { ship, shipView, pilot, crew, observer, views, renderer, surface, cockpit };
 
 function dominantBody(position) {
   let best = null;
@@ -120,9 +135,20 @@ function groundAltitude() {
 function step(dt) {
   envTime += dt * TIME_SCALE;
 
-  const controls = pilot.sample(dt);
-  Object.assign(ship.controls, controls);
+  const mouse = pilot.takeMouse();
+  if (crew.flying) {
+    Object.assign(ship.controls, pilot.sample(dt, mouse));
+  } else {
+    crew.look(mouse.dx, mouse.dy);
+    // Throttles stay where the pilot left them; nobody is at the stick to steer.
+    ship.controls.pitch = 0;
+    ship.controls.yaw = 0;
+    ship.controls.roll = 0;
+    ship.controls.strafe = 0;
+    ship.controls.vertical = 0;
+  }
   updateShip(ship, { groundAltitude: groundAltitude() }, dt);
+  crew.update(dt, ship, crew.flying ? IDLE_INPUT : pilot.walkInput());
 
   views.updatePositions(envTime);
   add(shipWorld, views.positions[ship.frame], ship.position);
@@ -132,7 +158,8 @@ function step(dt) {
     observer.update(dt);
     add(origin, views.positions[observer.frame], observer.local);
   } else {
-    shipView.cameraOrigin(ship, views.positions[ship.frame], pilot.third, origin);
+    crew.eye(eyeLocal);
+    shipView.cameraOrigin(ship, views.positions[ship.frame], pilot.third ? CHASE : eyeLocal, origin);
   }
 
   views.place(envTime, origin);
@@ -151,9 +178,19 @@ function step(dt) {
     terrainStats = { patches: 0, loaded: 0, inflight: 0 };
   }
 
-  const orientation = freeCamera ? observer.quaternion : pilot.cameraOrientation(ship.orientation);
-  shipView.update(ship, origin, views.positions[ship.frame], ship.controls.main * 0.5 + ship.controls.lift * 0.5);
-  const inCockpit = !freeCamera && !pilot.third;
+  let orientation;
+  if (freeCamera) orientation = observer.quaternion;
+  else if (crew.flying) orientation = pilot.cameraOrientation(ship.orientation);
+  else orientation = pilot.crewOrientation(ship.orientation, crew.yaw, crew.pitch);
+
+  shipView.update(
+    ship,
+    origin,
+    views.positions[ship.frame],
+    ship.controls.main * 0.5 + ship.controls.lift * 0.5,
+    views.sunDirectionOf(ship.frame)
+  );
+  const inCockpit = !freeCamera && !pilot.third && crew.flying;
   cockpit.visible = inCockpit;
   if (inCockpit) cockpit.draw(ship, ship.frame);
 
@@ -169,6 +206,7 @@ function step(dt) {
     groundAltitude: ship.telemetry.altitude,
     terrainStats,
     ship,
+    crew,
     freeCamera,
     info: renderer.info,
   });

@@ -44,6 +44,7 @@ export function createShip(bodyId, position, velocity) {
     hull: 1,
     heat: 0,
     landed: false,
+    properAcceleration: vec3(),
     contact: 0,
     lastImpact: 0,
     telemetry: { altitude: 0, verticalSpeed: 0, airspeed: 0, density: 0, angleOfAttack: 0, thrust: 0, gLoad: 0 },
@@ -164,6 +165,11 @@ export function updateShip(ship, environment, dt) {
   const density = hasAtmosphere(ship.frame) ? airDensity(ship.frame, altitude) : 0;
   applyAerodynamics(ship, density, mass, dt);
   applyGround(ship, altitude, mass, dt);
+
+  // What the crew actually feels is the non-gravitational force alone. Gravity is not
+  // felt - that is the whole point of free fall - so this vector is what decides whether
+  // someone on the deck is standing, sliding or floating.
+  scale(ship.properAcceleration, force, 1 / mass);
 
   scale(acceleration, force, 1 / mass);
   gravityAt(ship.frame, ship.position, scratch);

@@ -76,6 +76,9 @@ export class Hud {
         <tr><td>patches drawn</td><td>${terrainStats.patches}</td></tr>
         <tr><td>patches loaded</td><td>${terrainStats.loaded}</td></tr>
         <tr><td>building</td><td>${terrainStats.inflight}</td></tr>
+        <tr><td>crew</td><td>${state.crew ? (state.crew.seated ? `seated · ${state.crew.seat}` : state.crew.mode) : '—'}</td></tr>
+        <tr><td>deck</td><td>${state.crew && state.crew.room ? state.crew.room.name : '—'}</td></tr>
+        <tr><td>felt gravity</td><td>${state.crew ? `${state.crew.gravity.toFixed(2)} m/s²` : '—'}</td></tr>
         <tr><td>draw calls</td><td>${info.calls}</td></tr>
         <tr><td>fps</td><td>${this.fps.toFixed(0)}</td></tr>
       </table>

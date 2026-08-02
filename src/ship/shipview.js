@@ -12,7 +12,7 @@ import { SHIP } from './flight.js';
 // yet - phase 3 builds it - and a pilot buried in an unlit hull sees nothing but the far
 // wall of their own ship.
 export const COCKPIT = { x: 0, y: 3.6, z: -63 };
-const CHASE = { x: 0, y: 26, z: 128 };
+export const CHASE = { x: 0, y: 26, z: 128 };
 const EXPECTED_LENGTH = 120;
 
 export class ShipView {
@@ -23,13 +23,28 @@ export class ShipView {
     scene.add(this.group);
     this.model = null;
     this.glow = [];
+
+    // Nothing in this scene was lit until now: the planet does its own shading in a
+    // shader, so the ship arrived from Blender with standard materials and no light to
+    // stand in. The sun lights the hull from outside, deck lamps ride along inside.
+    this.sunLight = new THREE.DirectionalLight(0xfff4e2, 2.6);
+    this.sunLight.position.set(1, 0, 0);
+    scene.add(this.sunLight);
+    scene.add(new THREE.AmbientLight(0x1a2230, 0.5));
+    for (const z of [-52, -34, -18, 0, 14, 30]) {
+      const lamp = new THREE.PointLight(0xbcd8ff, 26, 26, 2);
+      lamp.position.set(0, 2.9, z);
+      this.group.add(lamp);
+    }
+    this.group.add(new THREE.PointLight(0xbcd8ff, 18, 20, 2).translateY(6.6).translateZ(-13));
     this.ready = false;
     this.warning = null;
     this.quaternion = new THREE.Quaternion();
     this.eye = vec3();
     this.offset = vec3();
 
-    new GLTFLoader().load(
+    const loader = new GLTFLoader();
+    loader.load(
       'assets/ship.glb',
       (gltf) => this.accept(gltf.scene),
       undefined,
@@ -38,6 +53,13 @@ export class ShipView {
         this.accept(this.placeholder());
       }
     );
+    loader.load('assets/interior.glb', (gltf) => {
+      gltf.scene.traverse((child) => {
+        if (child.isMesh) child.frustumCulled = false;
+      });
+      this.interior = gltf.scene;
+      this.group.add(gltf.scene);
+    });
   }
 
   placeholder() {
@@ -80,15 +102,15 @@ export class ShipView {
   // The eye sits in the cockpit, the chase camera hangs behind and above. Both are
   // expressed in ship space and rotated by the ship, so looking around never moves the
   // ship and flying never moves the head.
-  cameraOrigin(ship, bodyPosition, third, out = vec3()) {
-    const local = third ? CHASE : COCKPIT;
+  cameraOrigin(ship, bodyPosition, local, out = vec3()) {
     rotateVector(this.offset, local, ship.orientation);
     add(out, ship.position, this.offset);
     add(out, out, bodyPosition);
     return out;
   }
 
-  update(ship, cameraOrigin, bodyPosition, throttle) {
+  update(ship, cameraOrigin, bodyPosition, throttle, sunDirection) {
+    if (sunDirection) this.sunLight.position.set(sunDirection.x * 1000, sunDirection.y * 1000, sunDirection.z * 1000);
     if (!this.ready) return;
     add(this.eye, ship.position, bodyPosition);
     sub(this.eye, this.eye, cameraOrigin);
